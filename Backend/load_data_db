@@ -1,0 +1,62 @@
+import random
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from src.db_models import BaseModel
+from src.nodo.models import Medicion, TipoDato, Nodo  # Asegúrate de que Nodo esté importado correctamente
+from datetime import datetime, timedelta
+
+# 1. Configurar la conexión a la base de datos
+DATABASE_URL = "sqlite:///mi-db-sqlite.db"  # Cambia esto a la URL de tu base de datos
+engine = create_engine(DATABASE_URL, pool_size=20, max_overflow=10, pool_timeout=30)
+BaseModel.metadata.create_all(bind=engine)  # Crear las tablas en la base de datos si no existen
+
+# 2. Crear una sesión de SQLAlchemy
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# 3. Definir las fechas de inicio y fin
+fecha_inicio = datetime(2024, 10, 4, 0, 0)  # 17 de octubre de 2024
+fecha_fin = datetime(2024, 11, 9, 0, 0)
+
+# 4. Función para generar datos aleatorios
+def generar_datos_aleatorios(nodo_id, fecha, session):
+    tipo_dato = session.query(TipoDato).filter(TipoDato.nombre == "ALTITUDE_T").first()  # Asegúrate de que este tipo de dato exista
+    if not tipo_dato:
+        raise ValueError("Tipo de dato no encontrado en la base de datos.")
+    
+    data = random.uniform(0.0, 1.8)  # Genera un número aleatorio entre 0 y 1.8
+    return Medicion(
+        tipo_dato_id=tipo_dato.id,  # Asignar el id del tipo de dato
+        data=str(round(data, 7)),  # Guardar el dato con precisión de 7 decimales
+        time=fecha,
+        nodo_numero=nodo_id  # Relacionar la medición con el nodo
+    )
+
+# 5. Función para insertar datos en la base de datos
+def insertar_datos():
+    session = SessionLocal()
+    try:
+        # Obtener todos los nodos existentes
+        nodos = session.query(Nodo).all()
+        if not nodos:
+            print("No hay nodos en la base de datos.")
+            return
+
+        # Recorre los nodos y genera mediciones para cada uno
+        for nodo in nodos:
+            fecha_actual = fecha_inicio
+            while fecha_actual <= fecha_fin:
+                medicion = generar_datos_aleatorios(nodo.numero, fecha_actual, session)
+                session.add(medicion)  # Agregar la medición a la sesión
+                fecha_actual += timedelta(minutes=15)  # Incrementar 15 minutos
+
+        session.commit()  # Confirmar los cambios
+        print(f"Datos cargados correctamente para los nodos {nodos}.")
+    except Exception as e:
+        session.rollback()  # Deshacer cambios en caso de error
+        print(f"Error al cargar los datos: {e}")
+    finally:
+        session.close()  # Cerrar la sesión
+
+# 6. Ejecutar la inserción de datos
+insertar_datos()
+
